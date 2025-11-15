@@ -1,7 +1,6 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-import matplotlib.pyplot as plt
 
 # GPU 메모리 증가 허용 설정
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -132,28 +131,3 @@ history = model.fit(
 
 # 모델 저장
 model.save('cat_dog_classifier.keras')
-
-# 학습 결과 시각화
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-# Accuracy 그래프
-axes[0].plot(history.history['accuracy'], 'b-', label='Training Accuracy', linewidth=2)
-axes[0].plot(history.history['val_accuracy'], 'r-', label='Validation Accuracy', linewidth=2)
-axes[0].set_title('Model Accuracy', fontsize=14, fontweight='bold')
-axes[0].set_xlabel('Epoch', fontsize=12)
-axes[0].set_ylabel('Accuracy', fontsize=12)
-axes[0].legend(loc='lower right', fontsize=10)
-axes[0].grid(True, alpha=0.3)
-
-# Loss 그래프
-axes[1].plot(history.history['loss'], 'b-', label='Training Loss', linewidth=2)
-axes[1].plot(history.history['val_loss'], 'r-', label='Validation Loss', linewidth=2)
-axes[1].set_title('Model Loss', fontsize=14, fontweight='bold')
-axes[1].set_xlabel('Epoch', fontsize=12)
-axes[1].set_ylabel('Loss', fontsize=12)
-axes[1].legend(loc='upper right', fontsize=10)
-axes[1].grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.savefig('training_history.png', dpi=300, bbox_inches='tight')
-plt.show()

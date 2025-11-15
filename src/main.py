@@ -131,7 +131,7 @@ history = model.fit(
 )
 
 # 모델 저장
-model.save('cat_dog_classifier.h5')
+model.save('cat_dog_classifier.keras')
 
 # 학습 결과 시각화
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))

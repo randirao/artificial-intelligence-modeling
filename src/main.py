@@ -1,133 +1,61 @@
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import cifar10
+import numpy as np
 
-# GPU 메모리 증가 허용 설정
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print(e)
+# CIFAR-10 데이터셋 로드
+(trainX, trainY), (testX, testY) = cifar10.load_data()
 
-# 데이터셋 로드
-train_ds = tf.keras.preprocessing.image_dataset_from_directory(
-    './dataset',
-    image_size=(128, 128),  # 이미지 크기 증가로 더 나은 특징 학습
-    batch_size=32,
-    subset="training",
-    validation_split=0.2,
-    seed=1234
-)
+# 데이터 정규화
+trainX = trainX / 255.0
+testX = testX / 255.0
 
-val_ds = tf.keras.preprocessing.image_dataset_from_directory(
-    './dataset',
-    image_size=(128, 128),
-    batch_size=32,
-    subset="validation",
-    validation_split=0.2,
-    seed=1234
-)
+# 입력: CIFAR-10은 32x32x3 컬러 이미지
+inputs = layers.Input(shape=(32, 32, 3))
 
-# 클래스 이름 확인
-class_names = train_ds.class_names
+# 첫 번째 브랜치: Conv → MaxPool 경로
+branch1 = layers.Conv2D(32, (3, 3), padding='same', activation='relu')(inputs)
+branch1 = layers.MaxPooling2D((2, 2))(branch1)  # (None, 16, 16, 32)
 
-# 데이터 증강 레이어 (overfitting 방지)
-data_augmentation = keras.Sequential([
-    layers.RandomFlip("horizontal"),  # 좌우 반전
-    layers.RandomRotation(0.1),  # 10% 회전
-    layers.RandomZoom(0.1),  # 10% 줌
-    layers.RandomContrast(0.1),  # 대비 조정
-])
+# 두 번째 브랜치: Conv → MaxPool 경로 (다른 필터 크기)
+branch2 = layers.Conv2D(32, (5, 5), padding='same', activation='relu')(inputs)
+branch2 = layers.MaxPooling2D((2, 2))(branch2)  # (None, 16, 16, 32)
 
-# 데이터 정규화 및 최적화
-normalization_layer = layers.Rescaling(1./255)
+# 두 브랜치를 Concatenate (채널 방향으로 합침)
+concat = layers.Concatenate(axis=-1)([branch1, branch2])  # (None, 16, 16, 64)
 
-# 성능 최적화를 위한 캐싱 및 프리페칭
-AUTOTUNE = tf.data.AUTOTUNE
-train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
-val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+# Concatenate 결과 처리
+x = layers.Conv2D(64, (3, 3), padding='same', activation='relu')(concat)
+x = layers.MaxPooling2D((2, 2))(x)  # (None, 8, 8, 64)
+x = layers.Flatten()(x)
+x = layers.Dense(128, activation='relu')(x)
+x = layers.Dropout(0.5)(x)
 
-# 모델 구축 (overfitting 방지를 위한 설계)
-model = keras.Sequential([
-    # 입력 레이어 및 정규화
-    layers.Input(shape=(128, 128, 3)),
-    normalization_layer,
-    data_augmentation,
+# 출력층 (CIFAR-10은 10개 클래스)
+outputs = layers.Dense(10, activation='softmax')(x)
 
-    # 첫 번째 Conv Block
-    layers.Conv2D(32, 3, padding='same', activation='relu'),
-    layers.BatchNormalization(),
-    layers.MaxPooling2D(2),
-    layers.Dropout(0.25),
-
-    # 두 번째 Conv Block
-    layers.Conv2D(64, 3, padding='same', activation='relu'),
-    layers.BatchNormalization(),
-    layers.MaxPooling2D(2),
-    layers.Dropout(0.25),
-
-    # 세 번째 Conv Block
-    layers.Conv2D(128, 3, padding='same', activation='relu'),
-    layers.BatchNormalization(),
-    layers.MaxPooling2D(2),
-    layers.Dropout(0.3),
-
-    # 네 번째 Conv Block
-    layers.Conv2D(256, 3, padding='same', activation='relu'),
-    layers.BatchNormalization(),
-    layers.MaxPooling2D(2),
-    layers.Dropout(0.3),
-
-    # Fully Connected Layers
-    layers.Flatten(),
-    layers.Dense(256, activation='relu'),
-    layers.BatchNormalization(),
-    layers.Dropout(0.5),
-
-    layers.Dense(128, activation='relu'),
-    layers.BatchNormalization(),
-    layers.Dropout(0.5),
-
-    # 출력 레이어
-    layers.Dense(len(class_names), activation='softmax')
-])
+# 모델 생성
+model = models.Model(inputs=inputs, outputs=outputs)
 
 # 모델 컴파일
 model.compile(
-    optimizer=keras.optimizers.Adam(learning_rate=0.001),
+    optimizer='adam',
     loss='sparse_categorical_crossentropy',
     metrics=['accuracy']
 )
 
-# 콜백 설정 (overfitting 방지)
-callbacks = [
-    # Early Stopping: validation loss가 개선되지 않으면 학습 중단
-    keras.callbacks.EarlyStopping(
-        monitor='val_loss',
-        patience=3,
-        restore_best_weights=True,
-        verbose=0
-    ),
-    # Learning Rate 감소: validation loss가 개선되지 않으면 학습률 감소
-    keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss',
-        factor=0.5,
-        patience=2,
-        min_lr=1e-7,
-        verbose=0
-    ),
-]
+# 모델 요약 출력
+model.summary()
+
+# 모델 구조 시각화
+from tensorflow.keras.utils import plot_model
+plot_model(model, to_file='model.png', show_shapes=True, show_layer_names=True)
 
 # 모델 학습
+print("\n학습 시작...")
 history = model.fit(
-    train_ds,
-    validation_data=val_ds,
+    trainX, trainY,
+    validation_data=(testX, testY),
     epochs=5,
-    callbacks=callbacks,
-    verbose=1
+    batch_size=64
 )
-
-# 모델 저장
-model.save('cat_dog_classifier.keras')

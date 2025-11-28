@@ -1,47 +1,61 @@
 import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import cifar10
 import numpy as np
 
-# 1. 데이터 로드
-(trainX, trainY), (testX, testY) = tf.keras.datasets.fashion_mnist.load_data()
+# CIFAR-10 데이터셋 로드
+(trainX, trainY), (testX, testY) = cifar10.load_data()
 
-# 2. 전처리 (0~1로 정규화)
+# 데이터 정규화
 trainX = trainX / 255.0
 testX = testX / 255.0
 
-# 3. 데이터 형태 변경 (CNN이 아님 → (28,28,1) 필요 없음)
-# Functional API 기본 Dense 모델이므로 reshape 불필요
-trainX = trainX.reshape((trainX.shape[0], 28,28,1))
+# 입력: CIFAR-10은 32x32x3 컬러 이미지
+inputs = layers.Input(shape=(32, 32, 3))
 
-# 4. Functional API 모델 정의
-from tensorflow.keras.layers import Input, Flatten, Dense
-from tensorflow.keras.models import Model
+# 첫 번째 브랜치: Conv → MaxPool 경로
+branch1 = layers.Conv2D(32, (3, 3), padding='same', activation='relu')(inputs)
+branch1 = layers.MaxPooling2D((2, 2))(branch1)  # (None, 16, 16, 32)
 
-inputs = Input(shape=(28, 28))          # input layer
-x = Flatten()(inputs)                   # flatten layer
-x = Dense(128, activation='relu')(x)    # hidden1
-x = Dense(64, activation='relu')(x)     # hidden2
-outputs = Dense(10, activation='softmax')(x)  # output layer (10 classes)
+# 두 번째 브랜치: Conv → MaxPool 경로 (다른 필터 크기)
+branch2 = layers.Conv2D(32, (5, 5), padding='same', activation='relu')(inputs)
+branch2 = layers.MaxPooling2D((2, 2))(branch2)  # (None, 16, 16, 32)
 
-model = Model(inputs=inputs, outputs=outputs)
+# 두 브랜치를 Concatenate (채널 방향으로 합침)
+concat = layers.Concatenate(axis=-1)([branch1, branch2])  # (None, 16, 16, 64)
 
-# 5. 모델 구조 확인
-model.summary()
+# Concatenate 결과 처리
+x = layers.Conv2D(64, (3, 3), padding='same', activation='relu')(concat)
+x = layers.MaxPooling2D((2, 2))(x)  # (None, 8, 8, 64)
+x = layers.Flatten()(x)
+x = layers.Dense(128, activation='relu')(x)
+x = layers.Dropout(0.5)(x)
 
-# 6. Compile
+# 출력층 (CIFAR-10은 10개 클래스)
+outputs = layers.Dense(10, activation='softmax')(x)
+
+# 모델 생성
+model = models.Model(inputs=inputs, outputs=outputs)
+
+# 모델 컴파일
 model.compile(
-    loss='sparse_categorical_crossentropy',
     optimizer='adam',
+    loss='sparse_categorical_crossentropy',
     metrics=['accuracy']
 )
 
-# 7. 학습
-model.fit(
+# 모델 요약 출력
+model.summary()
+
+# 모델 구조 시각화
+from tensorflow.keras.utils import plot_model
+plot_model(model, to_file='model.png', show_shapes=True, show_layer_names=True)
+
+# 모델 학습
+print("\n학습 시작...")
+history = model.fit(
     trainX, trainY,
     validation_data=(testX, testY),
-    epochs=5
+    epochs=5,
+    batch_size=64
 )
-
-# 8. 평가
-score = model.evaluate(testX, testY)
-print("Test Loss:", score[0])
-print("Test Accuracy:", score[1])
